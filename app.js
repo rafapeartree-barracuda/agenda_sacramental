@@ -35,6 +35,16 @@ async function api(path = "") {
   return p;
 }
 
+function musicText(m) {
+  if (m == null) return null;
+  if (typeof m === "string" || typeof m === "number") return String(m).trim() || null;
+  if (typeof m === "object") {
+    const value = m.texto ?? m.nome ?? m.descricao ?? m.valor ?? m.musica;
+    if (value != null && typeof value !== "object") return String(value).trim() || null;
+  }
+  return null;
+}
+
 function hymn(h, label) {
   if (!h || (!h.numero && !h.nome)) return `<div class="mini-row"><b>${esc(label)}</b><span class="missing">Não definido</span></div>`;
   return `<div class="mini-row"><b>${esc(label)}</b><span>${h.numero ? `#${esc(h.numero)} · ` : ""}${esc(h.nome || "")}</span></div>`;
@@ -65,7 +75,7 @@ function renderAgenda(d) {
   $("#selectedDate").textContent = formatDate(d.reuniao?.data);
 
   const cards = [
-    {num:"01", title:"Boas-vindas", cls:"blue", content:`${person(b.preside,"Preside")}${person(b.dirige,"Dirige")}${listRows(b.reconhecimentos,"Nenhum reconhecimento cadastrado.")}${listRows(b.visitantes,"Nenhum visitante ou autoridade cadastrado.")}${b.musica?.texto ? `<div class="mini-row"><b>Música</b><span>${esc(b.musica.texto)}</span></div>` : `<div class="mini-row"><b>Música</b><span class="missing">Não definida</span></div>`}${b.recepcao ? `<div class="mini-row"><b>Recepção</b><span>${esc(b.recepcao)}</span></div>` : ""}${announcementRows(b.anuncios)}`},
+    {num:"01", title:"Boas-vindas", cls:"blue", content:`${person(b.preside,"Preside")}${person(b.dirige,"Dirige")}${listRows(b.reconhecimentos,"Nenhum reconhecimento cadastrado.")}${listRows(b.visitantes,"Nenhum visitante ou autoridade cadastrado.")}${musicText(b.musica) ? `<div class="mini-row"><b>Música</b><span>${esc(musicText(b.musica))}</span></div>` : `<div class="mini-row"><b>Música</b><span class="missing">Não definida</span></div>`}${b.recepcao ? `<div class="mini-row"><b>Recepção</b><span>${esc(b.recepcao)}</span></div>` : ""}${announcementRows(b.anuncios)}`},
     {num:"02", title:"Abertura", cls:"purple", content:`${hymn(a.hino,"Hino inicial")}${a.oracao ? `<div class="mini-row"><b>Oração inicial</b><span>${esc(a.oracao)}</span></div>` : `<div class="mini-row"><b>Oração inicial</b><span class="missing">Não definida</span></div>`}`},
     {num:"03", title:"Apoios e desobrigações", cls:"orange", content:`<div class="subhead">Apoios</div>${listRows(d.apoios,"Nenhum apoio cadastrado.")}<div class="subhead">Desobrigações</div>${listRows(d.desobrigacoes,"Nenhuma desobrigação cadastrada.")}`},
     {num:"04", title:"Sacramento", cls:"red", content:hymn(s.hino,"Hino sacramental")},
@@ -73,7 +83,7 @@ function renderAgenda(d) {
     {num:"06", title:"Encerramento", cls:"purple", content:`${hymn(e.hino,"Hino de encerramento")}${e.oracao ? `<div class="mini-row"><b>Oração final</b><span>${esc(e.oracao)}</span></div>` : `<div class="mini-row"><b>Oração final</b><span class="missing">Não definida</span></div>`}${d.lembrete ? `<div class="reminder"><b>Lembrete</b><span>${esc(d.lembrete)}</span></div>` : ""}`}
   ];
 
-  agenda.innerHTML = cards.map(c => `<section class="card"><div class="section-head"><div class="number ${c.cls}">${c.num}</div><h2>${esc(c.title)}</h2><span class="chevron">⌄</span></div><div class="content">${c.content}</div></section>`).join("") + `<button class="conduct-btn" id="conductBtn">▶&nbsp; Modo Conduzir</button>`;
+  agenda.innerHTML = `<button class="conduct-btn conduct-top" id="conductBtn">▶&nbsp; Modo Conduzir</button>` + cards.map(c => `<section class="card"><div class="section-head"><div class="number ${c.cls}">${c.num}</div><h2>${esc(c.title)}</h2><span class="chevron">⌄</span></div><div class="content">${c.content}</div></section>`).join("");
   $("#conductBtn").onclick = () => location.href = `conduzir/index.html?data=${encodeURIComponent(d.reuniao.data)}`;
 }
 
