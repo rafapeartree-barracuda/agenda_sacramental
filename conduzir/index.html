@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f5f5f7">
+  <title>Agenda Sacramental • Conduzir</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">MODO CONDUZIR</div>
+        <h1 id="meetingTitle">Carregando…</h1>
+        <p id="meetingMeta">Carregando agenda…</p>
+      </div>
+      <button class="exit" id="exitBtn" aria-label="Sair do modo conduzir">×</button>
+    </header>
+
+    <section class="status" id="status" aria-live="polite"></section>
+
+    <section class="block-picker" aria-label="Blocos da reunião">
+      <button data-block="0" class="block-dot active"><span>1</span><small>Boas-vindas</small></button>
+      <button data-block="1" class="block-dot"><span>2</span><small>Apoios</small></button>
+      <button data-block="2" class="block-dot"><span>3</span><small>Oradores</small></button>
+      <button data-block="3" class="block-dot"><span>4</span><small>Encerramento</small></button>
+    </section>
+
+    <section class="progress-wrap">
+      <div class="progress-label">
+        <strong id="blockLabel">BLOCO 1 DE 4</strong>
+        <span id="stepLabel">—</span>
+      </div>
+      <div class="progress"><div id="progressBar"></div></div>
+    </section>
+
+    <section id="screen" class="screen">
+      <div class="loading">Carregando a agenda…</div>
+    </section>
+
+    <footer class="controls">
+      <button id="prevBtn" class="secondary">Anterior</button>
+      <button id="nextBtn" class="primary">Próximo</button>
+    </footer>
+  </main>
+
+<script>
+const API_URL = "https://script.google.com/macros/s/AKfycbyFzg_byTiq3X2n5oHg6SMBIafwSwxiE9RJ1HE5coXzc5glvk0-2aelqN0qA4FSMkpGlg/exec";
+
+let DATA = null;
+let block = 0;
+let step = 0;
+
+const screen = document.getElementById("screen");
+const progressBar = document.getElementById("progressBar");
+const blockLabel = document.getElementById("blockLabel");
+const stepLabel = document.getElementById("stepLabel");
+const prevBtn = document.getElementById("prevBtn");
+const nextBtn = document.getElementById("nextBtn");
+const status = document.getElementById("status");
+
+const esc = (s = "") => String(s).replace(/[&<>"']/g, c =>
+  ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])
+);
+
+function formatDate(iso) {
+  if (!iso) return "";
+  const [y,m,d] = iso.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+function missing(text) {
+  return `<div class="warning">${esc(text)}</div>`;
+}
+
+function personCard(item, label) {
+  if (!item) {
+    return `<div class="item-card"><div class="item-type">${esc(label)}</div>${missing("Informação ainda não cadastrada.")}</div>`;
+  }
+
+  return `<div class="item-card">
+    <div class="item-type">${esc(label)}</div>
+    <div class="big-name">${esc(item.nome || "Nome não informado")}</div>
+    ${item.chamado ? `<div class="role">${esc(item.chamado)}</div>` : ""}
+  </div>`;
+}
+
+function hymnCard(hino, label) {
+  if (!hino) {
+    return `<div class="item-card"><div class="item-type">${esc(label)}</div>${missing("Hino ainda não designado.")}</div>`;
+  }
+
+  return `<div class="item-card">
+    <div class="item-type">${esc(label)}</div>
+    <div class="hino-number">${esc(hino.numero)}</div>
+    <div class="hino-name">${esc(hino.nome || "Nome não informado")}</div>
+  </div>`;
+}
+
+function prayerCard(name, label) {
+  if (!name) {
+    return `<div class="item-card"><div class="item-type">${esc(label)}</div>${missing("Oração ainda não designada.")}</div>`;
+  }
+
+  return `<div class="item-card">
+    <div class="item-type">${esc(label)}</div>
+    <div class="big-name">${esc(name)}</div>
+  </div>`;
+}
+
+function simpleTextCard(title, text, emptyMessage = "Nenhuma informação cadastrada.") {
+  return `<div class="item-card">
+    <div class="item-type">${esc(title)}</div>
+    ${text ? `<div class="body">${esc(text)}</div>` : missing(emptyMessage)}
+  </div>`;
+}
+
+function listCard(title, items, emptyMessage) {
+  if (!items || !items.length) {
+    return `<div class="item-card"><div class="item-type">${esc(title)}</div>${missing(emptyMessage)}</div>`;
+  }
+
+  return `<div class="item-card">
+    <div class="item-type">${esc(title)}</div>
+    <div class="people-list">
+      ${items.map(item => `
+        <div class="person-row">
+          <div class="order">${esc(item.ordem)}</div>
+          <div>
+            <strong>${esc(item.nome || "Nome não informado")}</strong>
+            ${item.chamado ? `<span>${esc(item.chamado)}</span>` : ""}
+            ${item.acao ? `<small>${esc(item.acao)}</small>` : ""}
+          </div>
+        </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function announcementsCard(items) {
+  if (!items || !items.length) {
+    return `<div class="item-card"><div class="item-type">Anúncios</div>${missing("Nenhum anúncio cadastrado.")}</div>`;
+  }
+
+  return `<div class="item-card">
+    <div class="item-type">Anúncios • pedir que anotem</div>
+    <div class="announcement-list">
+      ${items.map(a => `
+        <div class="announcement">
+          <strong>${esc(a.titulo || a.texto || "Anúncio")}</strong>
+          ${a.texto && a.texto !== a.titulo ? `<span>${esc(a.texto)}</span>` : ""}
+          ${a.data || a.observacao ? `<small>${a.data ? esc(formatDate(a.data)) : ""}${a.data && a.observacao ? " · " : ""}${a.observacao ? esc(a.observacao) : ""}</small>` : ""}
+        </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+function musicCard(musica) {
+  if (!musica) {
+    return `<div class="item-card"><div class="item-type">Música</div>${missing("Informação de música ainda não cadastrada.")}</div>`;
+  }
+  return `<div class="item-card">
+    <div class="item-type">Música</div>
+    <div class="body">${esc(musica)}</div>
+  </div>`;
+}
+
+function speakerCard(o, label) {
+  if (!o) {
+    return `<div class="item-card"><div class="item-type">${esc(label)}</div>${missing("Orador ainda não cadastrado.")}</div>`;
+  }
+
+  return `<div class="item-card">
+    <div class="item-type">${esc(label)}</div>
+    <div class="big-name">${esc(o.nome)}</div>
+    ${o.minutos != null ? `<div class="minutes">${esc(o.minutos)} min</div>` : ""}
+    ${o.tema ? `<div class="theme"><span>Tema</span>${esc(o.tema)}</div>` : ""}
+    ${o.recurso ? `<details class="resource"><summary>Recurso do discurso</summary><div>${esc(o.recurso)}</div></details>` : ""}
+  </div>`;
+}
+
+function buildBlocks(d) {
+  const b = d.boasVindas || {};
+  const oradores = d.oradores || [];
+
+  return [
+    {
+      titulo: "Boas-vindas",
+      subtitulo: "Abertura da reunião",
+      itens: [
+        {html: personCard(b.preside, "Preside")},
+        {html: personCard(b.dirige, "Dirige")},
+        {html: listCard("Reconhecimentos", b.reconhecimentos, "Nenhum reconhecimento cadastrado.")},
+        {html: listCard("Visitantes / autoridades", b.visitantes, "Nenhum visitante cadastrado.")},
+        {html: musicCard(b.musica && b.musica.texto)},
+        {html: simpleTextCard("Recepção", b.recepcao, "Informação de recepção ainda não cadastrada.")},
+        {html: announcementsCard(b.anuncios)},
+        {html: hymnCard(d.abertura && d.abertura.hino, "Hino inicial")},
+        {html: prayerCard(d.abertura && d.abertura.oracao, "Oração inicial")}
+      ]
+    },
+    {
+      titulo: "Apoios e Sacramento",
+      subtitulo: "Apoios, desobrigações e sacramento",
+      itens: [
+        {html: listCard("Apoios", d.apoios, "Nenhum apoio cadastrado.")},
+        {html: listCard("Desobrigações", d.desobrigacoes, "Nenhuma desobrigação cadastrada.")},
+        {html: hymnCard(d.sacramento && d.sacramento.hino, "Hino sacramental")}
+      ]
+    },
+    {
+      titulo: "Primeiro e segundo oradores",
+      subtitulo: "Discursos e hino intermediário",
+      itens: [
+        {html: speakerCard(oradores[0], "Primeiro orador")},
+        {html: speakerCard(oradores[1], "Segundo orador")},
+        {html: hymnCard(d.hinoIntermediario, "Hino intermediário")}
+      ]
+    },
+    {
+      titulo: "Encerramento",
+      subtitulo: "Último orador, hino, oração e recados",
+      itens: [
+        {html: speakerCard(oradores[2], "Último orador")},
+        {html: hymnCard(d.encerramento && d.encerramento.hino, "Hino de encerramento")},
+        {html: prayerCard(d.encerramento && d.encerramento.oracao, "Oração de encerramento")},
+        {html: simpleTextCard("Recados finais", d.lembrete, "Nenhum recado final cadastrado.")}
+      ]
+    }
+  ];
+}
+
+function render() {
+  if (!DATA) return;
+
+  const b = DATA.blocos[block];
+  const total = b.itens.length;
+
+  blockLabel.textContent = `BLOCO ${block + 1} DE 4`;
+  stepLabel.textContent = `${step + 1} / ${total}`;
+  progressBar.style.width = `${((step + 1) / total) * 100}%`;
+
+  document.querySelectorAll(".block-dot").forEach((el, i) => {
+    el.classList.toggle("active", i === block);
+    el.classList.toggle("done", i < block);
+  });
+
+  const item = b.itens[step];
+  screen.innerHTML = `
+    <div class="block-title">
+      <div class="block-kicker">${esc(b.subtitulo)}</div>
+      <h2>${esc(b.titulo)}</h2>
+    </div>
+    ${item.html}
+  `;
+
+  prevBtn.disabled = block === 0 && step === 0;
+  nextBtn.disabled = false;
+  nextBtn.textContent = step < total - 1
+    ? "Próximo"
+    : (block < DATA.blocos.length - 1 ? "Concluir bloco" : "Concluir reunião");
+}
+
+function goNext() {
+  const total = DATA.blocos[block].itens.length;
+  if (step < total - 1) {
+    step++;
+  } else if (block < DATA.blocos.length - 1) {
+    block++;
+    step = 0;
+  } else {
+    showFinished();
+    return;
+  }
+  render();
+}
+
+function goPrev() {
+  if (step > 0) {
+    step--;
+  } else if (block > 0) {
+    block--;
+    step = DATA.blocos[block].itens.length - 1;
+  }
+  render();
+}
+
+function showFinished() {
+  screen.innerHTML = `<div class="finished"><div class="check">✓</div><div class="block-kicker">REUNIÃO CONCLUÍDA</div><h2>Todos os blocos foram concluídos.</h2><p>O Modo Conduzir chegou ao fim.</p></div>`;
+  nextBtn.disabled = true;
+  prevBtn.disabled = false;
+  blockLabel.textContent = "CONCLUÍDO";
+  stepLabel.textContent = "";
+  progressBar.style.width = "100%";
+}
+
+async function load() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const requestedDate = params.get("data");
+    const url = requestedDate ? `${API_URL}?data=${encodeURIComponent(requestedDate)}` : API_URL;
+
+    const response = await fetch(url, {cache: "no-store"});
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const payload = await response.json();
+    if (!payload.sucesso) throw new Error(payload.erro || "A API retornou um erro.");
+
+    const d = payload.dados;
+    DATA = {
+      ...d,
+      blocos: buildBlocks(d)
+    };
+
+    document.querySelector("#meetingTitle").textContent = d.reuniao?.titulo || "Reunião Sacramental";
+    document.querySelector("#meetingMeta").textContent = [
+      d.reuniao?.ala,
+      d.reuniao?.data ? formatDate(d.reuniao.data) : null,
+      d.reuniao?.cidade
+    ].filter(Boolean).join(" • ");
+
+    status.textContent = `Dados carregados da agenda • ${d.reuniao?.data ? formatDate(d.reuniao.data) : "data não informada"}`;
+    status.className = "status success";
+
+    render();
+  } catch (error) {
+    console.error(error);
+    status.textContent = "Não foi possível carregar a agenda da API.";
+    status.className = "status error";
+    screen.innerHTML = `<div class="error-card"><h2>Erro ao carregar</h2><p>${esc(error.message || error)}</p><p>Verifique sua conexão e tente recarregar a página.</p></div>`;
+    prevBtn.disabled = true;
+    nextBtn.disabled = true;
+  }
+}
+
+prevBtn.onclick = goPrev;
+nextBtn.onclick = goNext;
+
+document.querySelectorAll(".block-dot").forEach(el => {
+  el.onclick = () => {
+    if (!DATA) return;
+    block = Number(el.dataset.block);
+    step = 0;
+    render();
+  };
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowRight" || e.key === " ") {
+    e.preventDefault();
+    if (!nextBtn.disabled) goNext();
+  }
+  if (e.key === "ArrowLeft") {
+    e.preventDefault();
+    if (!prevBtn.disabled) goPrev();
+  }
+});
+
+document.getElementById("exitBtn").onclick = () => {
+  const date = new URLSearchParams(location.search).get("data");
+  window.location.href = `../index.html?data=${encodeURIComponent(date || "")}`;
+};
+
+load();
+</script>
+</body>
+</html>
